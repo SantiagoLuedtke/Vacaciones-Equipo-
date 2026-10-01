@@ -1,0 +1,1974 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calendario Visual de Vacaciones (Sep 2026 - Abr 2027)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase App & Realtime Database SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; color: black !important; }
+    }
+    .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 p-4 min-h-screen">
+
+  <!-- HEADER -->
+  <header class="max-w-7xl mx-auto bg-white rounded-2xl p-4 shadow-sm border border-slate-200 mb-6 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xl shadow-md">
+        📅
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-lg font-bold text-slate-900">Calendario de Vacaciones del Equipo</h1>
+          <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">
+            🇦🇷 Días Hábiles & Feriados
+          </span>
+        </div>
+        <p id="periodText" class="text-xs text-slate-500">Período: <strong>Septiembre 2026 — Abril 2027</strong></p>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- CONTROL DINÁMICO DE MESES -->
+      <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+        <button onclick="addNextMonth()" class="px-2.5 py-1.5 text-xs font-bold text-indigo-700 bg-white hover:bg-indigo-50 border border-indigo-200 rounded-lg shadow-xs transition cursor-pointer flex items-center gap-1" title="Sumar un mes al final del calendario (Mayo, Junio, etc.)">
+          <span>+ Agregar Mes</span>
+        </button>
+        <button onclick="openMonthsModal()" class="px-2.5 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-xs transition cursor-pointer flex items-center gap-1.5" title="Seleccionar y eliminar meses pasados u organizar período">
+          <span>🗓️ Gestionar Meses</span>
+        </button>
+      </div>
+
+      <!-- BOTÓN BUZÓN DE APROBACIONES -->
+      <button onclick="openApprovalsModal()" class="relative px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm">
+        <span>🔔 Aprobaciones</span>
+        <span id="pendingBadgeCount" class="hidden px-1.5 py-0.2 bg-white text-amber-800 text-[10px] font-black rounded-full shadow-xs">0</span>
+      </button>
+
+      <!-- BOTÓN MODO LÍDER (CON PIN) -->
+      <button id="btnAdminToggle" onclick="toggleAdminMode()" class="px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">
+        <span id="adminToggleIcon">🔒</span>
+        <span id="adminToggleText">Acceso Líder</span>
+      </button>
+
+      <!-- BOTÓN SINCRONIZACIÓN NUBE (FIREBASE) -->
+      <button id="syncStatusBadge" onclick="openFirebaseConfigModal()" class="px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-xs" title="Configurar conexión en la nube con Firebase">
+        <span id="syncDot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+        <span id="syncStatusText">☁️ Conectar Nube</span>
+      </button>
+
+      <button onclick="openVacationModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow transition cursor-pointer flex items-center gap-1.5">
+        <span>+ Cargar Vacación</span>
+      </button>
+      <button onclick="handleMemberModalClick()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5">
+        <span>👥 Equipo (9)</span>
+      </button>
+      <button onclick="exportCSV()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5">
+        <span>📥 Descargar Excel/CSV</span>
+      </button>
+      <button onclick="window.print()" class="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer">
+        <span>🖨️ Imprimir</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- STATS -->
+  <div class="max-w-7xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <p class="text-[11px] font-bold text-slate-400 uppercase">Días Hábiles Tomados</p>
+      <h3 id="statTotalDays" class="text-2xl font-black text-slate-800 mt-1">0</h3>
+      <p class="text-[11px] text-slate-500">en todo el equipo</p>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <p class="text-[11px] font-bold text-slate-400 uppercase">Integrantes</p>
+      <h3 id="statTotalMembers" class="text-2xl font-black text-slate-800 mt-1">9</h3>
+      <p class="text-[11px] text-slate-500">miembros activos</p>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <p class="text-[11px] font-bold text-slate-400 uppercase">Solapamientos</p>
+      <h3 id="statTotalOverlaps" class="text-2xl font-black text-amber-600 mt-1">0 días</h3>
+      <p class="text-[11px] text-slate-500">coincidencias de ausencias</p>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <p class="text-[11px] font-bold text-slate-400 uppercase">Mes Pico</p>
+      <h3 id="statPeakMonth" class="text-lg font-black text-slate-800 mt-1">-</h3>
+      <p id="statPeakDetail" class="text-[11px] text-slate-500">mayor demanda</p>
+    </div>
+  </div>
+
+  <!-- DASHBOARD: BALANCE + GRAFICO MENSUAL -->
+  <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <!-- SALDO DE DIAS -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm lg:col-span-1">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-xs font-bold uppercase text-slate-700">Saldo de Días (Hábiles)</h2>
+        <button onclick="openMemberModal()" class="text-xs text-indigo-600 font-bold hover:underline cursor-pointer">Editar</button>
+      </div>
+      <div id="memberBalancesContainer" class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1"></div>
+    </div>
+
+    <!-- DEMANDA MENSUAL (GRAFICO SVG INTERACTIVO) -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h2 class="text-xs font-bold uppercase text-slate-700">Demanda Mensual de Vacaciones</h2>
+          <p class="text-[11px] text-slate-400">Total días hábiles solicitados de Sep 2026 a Abr 2027</p>
+        </div>
+        <button onclick="openHolidaysModal()" class="text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2.5 py-1 rounded-lg cursor-pointer">
+          🇦🇷 Ver Feriados (11)
+        </button>
+      </div>
+      <div id="chartContainer" class="h-56 flex items-end justify-between gap-2 pt-6 px-4 border-b border-slate-200"></div>
+    </div>
+  </div>
+
+  <!-- ALERTA DE SOLAPAMIENTOS -->
+  <div id="overlapAlertBox" class="max-w-7xl mx-auto mb-6 hidden bg-amber-50 border border-amber-300 rounded-xl p-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl">⚠️</span>
+      <div>
+        <h3 class="text-xs font-extrabold uppercase text-amber-900 tracking-wider">Días con Ausencias Simultáneas Detectadas</h3>
+        <div id="overlapList" class="text-xs text-amber-800 mt-1 space-y-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VISTAS: TABS -->
+  <div class="max-w-7xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="border-b border-slate-200 p-3 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-1.5 bg-slate-200 p-1 rounded-xl">
+        <button id="tabCalendar" onclick="changeView('calendar')" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800 cursor-pointer">
+          📅 Vista Calendario
+        </button>
+        <button id="tabGantt" onclick="changeView('gantt')" class="px-3 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 cursor-pointer">
+          📊 Vista Cronograma / Gantt
+        </button>
+        <button id="tabTable" onclick="changeView('table')" class="px-3 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 cursor-pointer">
+          📋 Lista de Vacaciones
+        </button>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <label for="filterMember" class="text-slate-500 font-medium">Integrante:</label>
+        <select id="filterMember" onchange="applyMemberFilter()" class="border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold bg-white cursor-pointer">
+          <option value="ALL">Todos los integrantes</option>
+        </select>
+
+        <label for="filterStatus" class="text-slate-500 font-medium ml-2">Estado:</label>
+        <select id="filterStatus" onchange="applyStatusFilter()" class="border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold bg-white cursor-pointer">
+          <option value="ALL">Todos los estados</option>
+          <option value="APROBADA">✅ Solo Aprobadas</option>
+          <option value="PENDIENTE">⏳ Solo Pendientes</option>
+          <option value="RECHAZADA">❌ Solo Rechazadas</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- CONTENIDO VISTA 1: CALENDARIO -->
+    <div id="viewCalendar" class="p-4">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3 text-[11px] bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="flex items-center gap-1"><span class="w-3 h-3 bg-white border border-slate-300 rounded"></span> Hábil</span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 bg-slate-200 rounded"></span> Fin de Semana</span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 bg-sky-200 rounded"></span> 🇦🇷 Feriado</span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 bg-amber-300 rounded"></span> ⚠️ Solapamiento</span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 border-2 border-dashed border-amber-400 bg-amber-50 rounded"></span> ⏳ Pendiente</span>
+        </div>
+        <div id="legendMembers" class="flex flex-wrap items-center gap-2"></div>
+      </div>
+      <div id="calendarGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4"></div>
+    </div>
+
+    <!-- CONTENIDO VISTA 2: GANTT -->
+    <div id="viewGantt" class="p-4 hidden">
+      <div id="ganttWrapper" class="overflow-x-auto custom-scrollbar border border-slate-200 rounded-xl bg-white"></div>
+    </div>
+
+    <!-- CONTENIDO VISTA 3: TABLA -->
+    <div id="viewTable" class="p-4 hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left">
+          <thead class="bg-slate-100 text-slate-600 font-bold uppercase">
+            <tr>
+              <th class="p-3">Integrante</th>
+              <th class="p-3 text-center">Estado</th>
+              <th class="p-3">Desde — Hasta</th>
+              <th class="p-3 text-center">Días Hábiles</th>
+              <th class="p-3 text-center">Feriados</th>
+              <th class="p-3 text-center">Fines de Semana</th>
+              <th class="p-3 text-center">Días Corridos</th>
+              <th class="p-3">Notas</th>
+              <th class="p-3 text-right">Acción</th>
+            </tr>
+          </thead>
+          <tbody id="vacationTableBody" class="divide-y divide-slate-100 font-medium"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CARGAR VACACIÓN -->
+  <div id="modalVacation" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl">
+      <div class="flex items-center justify-between border-b pb-3 mb-4">
+        <h3 id="vacationModalTitle" class="font-bold text-sm text-slate-800">🏖️ Registrar Vacaciones</h3>
+        <button onclick="closeVacationModal()" class="text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
+      </div>
+
+      <form id="formVacation" onsubmit="saveVacation(event)" class="space-y-3 text-xs">
+        <input type="hidden" id="vacationEditId">
+
+        <div>
+          <label class="block font-bold text-slate-700 uppercase mb-1">Integrante</label>
+          <select id="vacationMemberId" required class="w-full border border-slate-300 rounded-xl p-2 font-bold cursor-pointer"></select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-bold text-slate-700 uppercase mb-1">Desde</label>
+            <input type="date" id="vacationStart" required min="2026-09-01" max="2027-04-30" onchange="previewVacation()" class="w-full border border-slate-300 rounded-xl p-2 font-bold">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 uppercase mb-1">Hasta</label>
+            <input type="date" id="vacationEnd" required min="2026-09-01" max="2027-04-30" onchange="previewVacation()" class="w-full border border-slate-300 rounded-xl p-2 font-bold">
+          </div>
+        </div>
+
+        <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 space-y-1">
+          <div class="flex items-center justify-between font-extrabold text-indigo-900 border-b border-indigo-200 pb-1">
+            <span>Días Hábiles que Descuenta:</span>
+            <span id="prevBizDays" class="text-sm text-indigo-600">0 días</span>
+          </div>
+          <div class="flex justify-between text-slate-600 pt-1">
+            <span>Días corridos:</span>
+            <span id="prevCalDays" class="font-bold">0</span>
+          </div>
+          <div class="flex justify-between text-slate-600">
+            <span>Fines de semana (no descuentan):</span>
+            <span id="prevWeekends" class="font-bold">0</span>
+          </div>
+          <div class="flex justify-between text-slate-600">
+            <span>Feriados argentinos (no descuentan):</span>
+            <span id="prevHolidays" class="font-bold">0</span>
+          </div>
+          <div id="prevHolidayNames" class="text-[10px] text-sky-800 hidden pt-1"></div>
+        </div>
+
+        <!-- SELECTOR DE ESTADO / AVISO COLABORADOR -->
+        <div id="vacationStatusBox" class="p-2.5 rounded-xl border border-amber-200 bg-amber-50/80 text-xs">
+          <div class="flex items-center justify-between mb-1">
+            <span class="font-bold text-amber-900 uppercase text-[11px]">Tipo de Registro</span>
+            <span id="badgeRoleInModal" class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-900">Modo Colaborador</span>
+          </div>
+          <select id="vacationStatusInput" class="w-full border border-amber-300 rounded-lg p-1.5 font-bold bg-white text-xs">
+            <option value="PENDIENTE">⏳ Solicitud Pendiente (espera aprobación del líder)</option>
+            <option value="APROBADA">✅ Aprobada Directamente (solo líder)</option>
+          </select>
+          <p id="vacationStatusNotice" class="text-[10px] text-amber-800 mt-1">
+            Tu pedido quedará registrado como <strong>Pendiente</strong> en el calendario para que el líder lo revise y apruebe.
+          </p>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 uppercase mb-1">Notas (opcional)</label>
+          <input type="text" id="vacationNotes" placeholder="Ej: Vacaciones de verano" class="w-full border border-slate-300 rounded-xl p-2">
+        </div>
+
+        <div class="flex items-center justify-between pt-3 border-t gap-2">
+          <button type="button" id="btnCancelVacationModal" onclick="cancelVacationFromModal()" class="hidden px-3.5 py-2 font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl border border-rose-200 transition cursor-pointer text-xs flex items-center gap-1.5 shadow-xs">
+            <span>🚫 Cancelar esta Vacación</span>
+          </button>
+          <div class="flex gap-2 ml-auto">
+            <button type="button" onclick="closeVacationModal()" class="px-3.5 py-2 font-bold text-slate-600 hover:text-slate-800 cursor-pointer">Cerrar</button>
+            <button type="submit" id="btnSaveVacationModal" class="px-4 py-2 font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition cursor-pointer">Guardar</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EQUIPO -->
+  <div id="modalMember" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl">
+      <div class="flex items-center justify-between border-b pb-3 mb-4">
+        <h3 class="font-bold text-sm text-slate-800">👥 Integrantes del Equipo</h3>
+        <button onclick="closeMemberModal()" class="text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
+      </div>
+
+      <div class="space-y-3">
+        <form id="formMember" onsubmit="saveMember(event)" class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-2">
+          <input type="hidden" id="memberEditId">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-bold text-slate-600 mb-1">Nombre</label>
+              <input type="text" id="memberName" required class="w-full border rounded-lg p-1.5 uppercase font-bold">
+            </div>
+            <div>
+              <label class="block font-bold text-slate-600 mb-1">Cupo Días Hábiles</label>
+              <input type="number" id="memberQuota" min="0" max="60" value="14" required class="w-full border rounded-lg p-1.5 font-bold">
+            </div>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1">Color</label>
+            <input type="color" id="memberColor" value="#2563eb" class="w-full h-8 rounded-lg cursor-pointer border-0">
+          </div>
+          <div class="flex justify-end gap-2 pt-1">
+            <button type="button" id="btnCancelMemberEdit" onclick="resetMemberForm()" class="hidden px-2 py-1 text-slate-500 font-bold cursor-pointer">Cancelar</button>
+            <button type="submit" id="btnSaveMember" class="px-3 py-1 bg-indigo-600 text-white rounded-lg font-bold cursor-pointer">Agregar</button>
+          </div>
+        </form>
+
+        <div id="memberListModal" class="max-h-56 overflow-y-auto custom-scrollbar space-y-1.5"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: FERIADOS -->
+  <div id="modalHolidays" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl">
+      <div class="flex items-center justify-between border-b pb-3 mb-3">
+        <h3 class="font-bold text-sm text-slate-800">🇦🇷 Feriados Nacionales de Argentina</h3>
+        <button onclick="closeHolidaysModal()" class="text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
+      </div>
+      <p class="text-xs text-slate-500 mb-2">Estos días <strong>no descuentan</strong> de las vacaciones:</p>
+      <div id="holidaysList" class="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar text-xs"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: BUZÓN DE APROBACIONES (LÍDER) -->
+  <div id="modalApprovals" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-5 shadow-2xl max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between border-b pb-3 mb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg font-bold">
+            🔔
+          </div>
+          <div>
+            <h3 class="font-bold text-sm text-slate-900">Buzón de Aprobaciones de Vacaciones</h3>
+            <p class="text-[11px] text-slate-500">Revisa y decide sobre las solicitudes pendientes de tu equipo</p>
+          </div>
+        </div>
+        <button onclick="closeApprovalsModal()" class="text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
+      </div>
+
+      <div id="approvalsListContainer" class="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 pr-1 py-1">
+        <!-- Rellenado dinámicamente -->
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div class="flex items-center gap-2">
+          <span class="text-slate-500 font-medium">PIN de Líder:</span>
+          <span id="currentPinDisplay" class="font-mono font-bold bg-slate-100 px-2 py-0.5 rounded border border-slate-200">1234</span>
+          <button onclick="changeAdminPIN()" class="text-indigo-600 font-bold hover:underline cursor-pointer">Cambiar PIN</button>
+        </div>
+        <button onclick="closeApprovalsModal()" class="px-4 py-2 font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl cursor-pointer">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: GESTIONAR MESES Y PERÍODO -->
+  <div id="modalMonths" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between border-b pb-3 mb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-lg font-bold">
+            🗓️
+          </div>
+          <div>
+            <h3 class="font-bold text-sm text-slate-900">Gestionar Meses del Calendario</h3>
+            <p class="text-[11px] text-slate-500">Elimina meses pasados que ya no uses o amplía el período</p>
+          </div>
+        </div>
+        <button onclick="closeMonthsModal()" class="text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
+      </div>
+
+      <!-- ACCIONES RÁPIDAS -->
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <button onclick="removeFirstMonth()" class="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs" title="Eliminar el mes más antiguo del calendario">
+          <span>🗑️ Quitar Mes Más Antiguo</span>
+        </button>
+        <button onclick="addNextMonth()" class="p-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs" title="Sumar un nuevo mes al final">
+          <span>+ Agregar Mes Siguiente</span>
+        </button>
+      </div>
+
+      <!-- LISTADO DE MESES ACTIVOS CON ACCIÓN DE ELIMINAR -->
+      <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
+        <span>Meses Visibles en el Calendario</span>
+        <span id="modalMonthsCountBadge" class="text-indigo-600 font-extrabold">8 meses</span>
+      </div>
+
+      <div id="monthsListContainer" class="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1 py-1 max-h-64">
+        <!-- Rellenado dinámicamente con renderMonthsModalList() -->
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+        <button onclick="resetDefaultMonths()" class="text-slate-500 hover:text-indigo-600 font-bold underline cursor-pointer" title="Volver al rango original Sep 2026 - Abr 2027">
+          🔄 Restablecer rango original
+        </button>
+        <button onclick="closeMonthsModal()" class="px-4 py-2 font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl cursor-pointer">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: INGRESO DE PIN DE LÍDER -->
+  <div id="modalPin" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-xs w-full p-5 shadow-2xl text-center">
+      <div class="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 mx-auto flex items-center justify-center text-xl mb-2">
+        🔒
+      </div>
+      <h3 class="font-bold text-sm text-slate-900">Acceso Líder / Administrador</h3>
+      <p class="text-xs text-slate-500 mt-1 mb-4">Ingresa tu PIN para aprobar solicitudes y gestionar el equipo.</p>
+      
+      <input type="password" id="inputPinCode" maxlength="8" placeholder="PIN (por defecto: 1234)" class="w-full text-center text-lg font-mono tracking-widest border border-slate-300 rounded-xl p-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none mb-3">
+      
+      <div class="flex gap-2">
+        <button type="button" onclick="closePinModal()" class="flex-1 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl text-xs cursor-pointer">Cancelar</button>
+        <button type="button" onclick="submitPinCode()" class="flex-1 py-2 font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs cursor-pointer">Ingresar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIGURAR SINCRONIZACIÓN FIREBASE -->
+  <div id="modalFirebaseConfig" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-xl w-full p-5 shadow-2xl max-h-[92vh] flex flex-col text-xs">
+      <div class="flex items-center justify-between border-b pb-3 mb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-lg font-bold">
+            🔥
+          </div>
+          <div>
+            <h3 class="font-bold text-sm text-slate-900">Sincronización en la Nube (Google Firebase)</h3>
+            <p class="text-[11px] text-slate-500">Conecta tu base de datos para que todo el equipo comparta y vea los datos en vivo</p>
+          </div>
+        </div>
+        <button onclick="closeFirebaseConfigModal()" class="text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto custom-scrollbar space-y-3.5 pr-1">
+        <!-- ESTADO ACTUAL -->
+        <div id="firebaseCurrentStatusBox" class="p-3 rounded-xl border bg-slate-50 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span id="modalSyncDot" class="w-3 h-3 rounded-full bg-slate-400"></span>
+            <div>
+              <span id="modalSyncTitle" class="font-bold text-slate-800 block">Modo Local (Sin sincronización en la nube)</span>
+              <span id="modalSyncSubtitle" class="text-[11px] text-slate-500">Los datos solo se guardan en este navegador hasta que conectes Firebase.</span>
+            </div>
+          </div>
+          <button id="btnDisconnectFirebase" type="button" onclick="disconnectFirebase()" class="hidden px-2.5 py-1 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg font-bold cursor-pointer">
+            Desconectar
+          </button>
+        </div>
+
+        <!-- PASOS DE CONFIGURACIÓN -->
+        <div class="bg-indigo-50/70 border border-indigo-100 rounded-xl p-3.5 space-y-2">
+          <h4 class="font-bold text-indigo-950 flex items-center gap-1.5">
+            <span>🚀</span> ¿Cómo conectar tu proyecto gratuito en 2 minutos?
+          </h4>
+          <ol class="list-decimal list-inside space-y-1.5 text-indigo-900 text-[11px] leading-relaxed">
+            <li>Ingresa a <a href="https://console.firebase.google.com" target="_blank" class="underline font-bold text-indigo-700 hover:text-indigo-900">console.firebase.google.com</a> con tu cuenta de Google y pulsa <strong>"Crear un proyecto"</strong> (ej: <em>Vacaciones-Equipo</em>).</li>
+            <li>En el menú lateral ve a <strong>Build > Realtime Database</strong> y pulsa <strong>"Crear base de datos"</strong> (selecciona <em>"Iniciar en modo de prueba"</em>).</li>
+            <li>En la tuerca de ajustes ⚙️ arriba a la izquierda ve a <strong>"Configuración del proyecto"</strong>, baja a <em>Tus apps</em> y pulsa el icono web <strong>`&lt;/&gt;`</strong>.</li>
+            <li>Copia el bloque <code>const firebaseConfig = { ... };</code> que te da Google y pégalo aquí abajo:</li>
+          </ol>
+        </div>
+
+        <!-- ENTRADA DE CONFIGURACIÓN -->
+        <div>
+          <label class="block font-bold text-slate-700 uppercase mb-1">
+            Configuración de Firebase (pega aquí el código o JSON):
+          </label>
+          <textarea id="firebaseConfigInput" rows="4" placeholder='const firebaseConfig = {
+  apiKey: "AIzaSy...",
+  authDomain: "tu-proyecto.firebaseapp.com",
+  databaseURL: "https://tu-proyecto-default-rtdb.firebaseio.com",
+  projectId: "tu-proyecto",
+  ...
+};' class="w-full font-mono text-[11px] border border-slate-300 rounded-xl p-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"></textarea>
+          <p class="text-[10px] text-slate-400 mt-1">El sistema detectará automáticamente la <strong>databaseURL</strong> y la <strong>apiKey</strong>.</p>
+        </div>
+
+        <!-- BOTÓN EXPORTAR PARA COMPARTIR -->
+        <div class="p-3 bg-amber-50/70 rounded-xl border border-amber-200 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span class="font-bold text-amber-950 text-xs block">🌐 ¿Listo para compartir el link con el equipo?</span>
+            <span class="text-[11px] text-amber-800">Descarga una copia con tu base de datos ya conectada y arrástrala a <a href="https://app.netlify.com/drop" target="_blank" class="underline font-bold">app.netlify.com/drop</a> para tener tu enlace público en 15 segundos.</span>
+          </div>
+          <button type="button" onclick="exportReadyToShareHTML()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-xs transition cursor-pointer text-xs flex items-center gap-1.5">
+            <span>💾 Descargar archivo para compartir</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+        <button type="button" onclick="closeFirebaseConfigModal()" class="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer">
+          Cerrar
+        </button>
+        <button type="button" onclick="saveFirebaseConfigAndConnect()" class="px-4 py-2 font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5">
+          <span>🔥 Guardar y Conectar Nube</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEFAULT_MONTHS = [
+      { year: 2026, month: 8, name: 'Septiembre 2026', short: 'Sep 26', days: 30 },
+      { year: 2026, month: 9, name: 'Octubre 2026', short: 'Oct 26', days: 31 },
+      { year: 2026, month: 10, name: 'Noviembre 2026', short: 'Nov 26', days: 30 },
+      { year: 2026, month: 11, name: 'Diciembre 2026', short: 'Dic 26', days: 31 },
+      { year: 2027, month: 0, name: 'Enero 2027', short: 'Ene 27', days: 31 },
+      { year: 2027, month: 1, name: 'Febrero 2027', short: 'Feb 27', days: 28 },
+      { year: 2027, month: 2, name: 'Marzo 2027', short: 'Mar 27', days: 31 },
+      { year: 2027, month: 3, name: 'Abril 2027', short: 'Abr 27', days: 30 }
+    ];
+
+    const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const MONTH_SHORTS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    let MONTHS = [...DEFAULT_MONTHS];
+
+    const ARG_HOLIDAYS = {
+      '2026-10-12': 'Día del Respeto a la Diversidad Cultural',
+      '2026-11-20': 'Día de la Soberanía Nacional',
+      '2026-11-23': 'Feriado Turístico / Traslado',
+      '2026-12-08': 'Inmaculada Concepción de María',
+      '2026-12-25': 'Navidad',
+      '2027-01-01': 'Año Nuevo',
+      '2027-02-08': 'Carnaval',
+      '2027-02-09': 'Carnaval',
+      '2027-03-24': 'Día Nac. de la Memoria por la Verdad y la Justicia',
+      '2027-03-26': 'Viernes Santo',
+      '2027-04-02': 'Día del Veterano y de los Caídos en Malvinas',
+      '2027-05-01': 'Día del Trabajador',
+      '2027-05-25': 'Día de la Revolución de Mayo',
+      '2027-06-17': 'Paso a la Inmortalidad del Gral. Martín Miguel de Güemes',
+      '2027-06-20': 'Paso a la Inmortalidad del Gral. Manuel Belgrano',
+      '2027-07-09': 'Día de la Independencia',
+      '2027-08-16': 'Paso a la Inmortalidad del Gral. José de San Martín',
+      '2027-10-11': 'Feriado Turístico',
+      '2027-10-12': 'Día del Respeto a la Diversidad Cultural',
+      '2027-11-20': 'Día de la Soberanía Nacional',
+      '2027-12-08': 'Inmaculada Concepción de María',
+      '2027-12-25': 'Navidad'
+    };
+
+    const INITIAL_MEMBERS = [
+      { id: 'm1', name: 'JONY', quota: 14, color: '#2563eb' },
+      { id: 'm2', name: 'BRISA', quota: 14, color: '#ec4899' },
+      { id: 'm3', name: 'ANA', quota: 14, color: '#10b981' },
+      { id: 'm4', name: 'KEVIN', quota: 14, color: '#f59e0b' },
+      { id: 'm5', name: 'JUANSE', quota: 14, color: '#8b5cf6' },
+      { id: 'm6', name: 'JUANELO', quota: 14, color: '#06b6d4' },
+      { id: 'm7', name: 'ADRI', quota: 14, color: '#f97316' },
+      { id: 'm8', name: 'CLAUDIA', quota: 14, color: '#14b8a6' },
+      { id: 'm9', name: 'MARCE', quota: 14, color: '#e11d48' }
+    ];
+
+    let teamMembers = [];
+    let vacations = [];
+    let currentView = 'calendar';
+    let filterMember = 'ALL';
+    let filterStatus = 'ALL';
+    let isAdmin = false;
+    let adminPIN = localStorage.getItem('vac_admin_pin') || '1234';
+    let currentPendingAction = null;
+
+    // CONFIGURACIÓN Y ESTADO DE FIREBASE
+    let PRESET_FIREBASE_CONFIG = {
+      apiKey: "AIzaSyDsV4RwSrqM7WKKQ9qfDZsFG6QhbC2RbkQ",
+      authDomain: "vacaciones-equipo-cdf66.firebaseapp.com",
+      databaseURL: "https://vacaciones-equipo-cdf66-default-rtdb.firebaseio.com",
+      projectId: "vacaciones-equipo-cdf66",
+      storageBucket: "vacaciones-equipo-cdf66.firebasestorage.app",
+      messagingSenderId: "25031470327",
+      appId: "1:25031470327:web:09f86f96f9d8eea64477f2",
+      measurementId: "G-9FNLBFXM4J"
+    };
+    let isFirebaseConnected = false;
+    let firebaseDbRef = null;
+
+    function init() {
+      const sm = localStorage.getItem('vac_members_final');
+      const sv = localStorage.getItem('vac_list_final');
+      const scm = localStorage.getItem('vac_custom_months');
+      MONTHS = scm ? JSON.parse(scm) : [...DEFAULT_MONTHS];
+      teamMembers = sm ? JSON.parse(sm) : [...INITIAL_MEMBERS];
+      vacations = sv ? JSON.parse(sv) : [];
+
+      // Garantizar que cada registro tenga su estado
+      vacations.forEach(v => {
+        if (!v.status) v.status = 'APROBADA';
+      });
+
+      updatePeriodHeader();
+      updateAdminUI();
+      renderAll();
+
+      // Iniciar sincronización en la nube si está configurado
+      initFirebase();
+    }
+
+    function openMonthsModal() {
+      renderMonthsModalList();
+      document.getElementById('modalMonths').classList.remove('hidden');
+    }
+
+    function closeMonthsModal() {
+      document.getElementById('modalMonths').classList.add('hidden');
+    }
+
+    function renderMonthsModalList() {
+      const container = document.getElementById('monthsListContainer');
+      const badge = document.getElementById('modalMonthsCountBadge');
+      if (badge) badge.textContent = `${MONTHS.length} meses activos`;
+      if (!container) return;
+
+      container.innerHTML = MONTHS.map((m, idx) => {
+        const mStart = `${m.year}-${String(m.month + 1).padStart(2, '0')}-01`;
+        const mEnd = `${m.year}-${String(m.month + 1).padStart(2, '0')}-${String(m.days).padStart(2, '0')}`;
+        const vacCount = vacations.filter(v => v.start <= mEnd && v.end >= mStart).length;
+        const isOldest = idx === 0;
+
+        return `
+          <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-white transition text-xs">
+            <div class="flex items-center gap-2.5">
+              <span class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">
+                ${m.month + 1}
+              </span>
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="font-bold text-slate-800 text-xs">${m.name}</span>
+                  ${isOldest ? '<span class="text-[9px] px-1.5 py-0.2 bg-amber-100 text-amber-800 font-bold rounded">Mes más antiguo</span>' : ''}
+                </div>
+                <span class="text-[11px] text-slate-500 block">
+                  ${m.days} días • ${vacCount > 0 ? `<strong class="text-indigo-600">${vacCount} vacación(es)</strong>` : 'Sin registros'}
+                </span>
+              </div>
+            </div>
+            <button onclick="confirmRemoveMonth(${m.year}, ${m.month})" class="px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:text-white hover:bg-rose-600 rounded-lg border border-rose-200 transition cursor-pointer flex items-center gap-1 shadow-xs">
+              <span>🗑️ Quitar</span>
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function removeFirstMonth() {
+      if (MONTHS.length <= 1) {
+        alert('Debe quedar al menos un mes en el calendario.');
+        return;
+      }
+      const first = MONTHS[0];
+      confirmRemoveMonth(first.year, first.month);
+    }
+
+    function confirmRemoveMonth(year, month) {
+      if (MONTHS.length <= 1) {
+        alert('Debe quedar al menos un mes en el calendario.');
+        return;
+      }
+      const mObj = MONTHS.find(m => m.year === year && m.month === month);
+      if (!mObj) return;
+
+      const mStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      const mEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(mObj.days).padStart(2, '0')}`;
+      const inMonthCount = vacations.filter(v => v.start <= mEnd && v.end >= mStart).length;
+
+      let msg = `¿Deseas quitar "${mObj.name}" del calendario?\n\n`;
+      if (inMonthCount > 0) {
+        msg += `ℹ️ Nota: Hay ${inMonthCount} registro(s) de vacaciones en este período.\n` +
+               `El mes ya no se mostrará en el calendario ni en el cronograma, pero los registros históricos seguirán guardados en la tabla y exportaciones.\n\n`;
+      } else {
+        msg += `Este mes ya no se mostrará en las cuadrículas ni cronogramas.\n\n`;
+      }
+      msg += `¿Confirmar eliminación?`;
+
+      if (confirm(msg)) {
+        MONTHS = MONTHS.filter(m => !(m.year === year && m.month === month));
+        localStorage.setItem('vac_custom_months', JSON.stringify(MONTHS));
+        updatePeriodHeader();
+        renderAll();
+        if (document.getElementById('modalMonths') && !document.getElementById('modalMonths').classList.contains('hidden')) {
+          renderMonthsModalList();
+        }
+        alert(`✅ Mes "${mObj.name}" eliminado del calendario.`);
+      }
+    }
+
+    function addNextMonth() {
+      const last = MONTHS[MONTHS.length - 1];
+      let nextMonth = last.month + 1;
+      let nextYear = last.year;
+      if (nextMonth > 11) {
+        nextMonth = 0;
+        nextYear++;
+      }
+      const daysInMonth = new Date(nextYear, nextMonth + 1, 0).getDate();
+      MONTHS.push({
+        year: nextYear,
+        month: nextMonth,
+        name: `${MONTH_NAMES[nextMonth]} ${nextYear}`,
+        short: `${MONTH_SHORTS[nextMonth]} ${String(nextYear).slice(2)}`,
+        days: daysInMonth
+      });
+      localStorage.setItem('vac_custom_months', JSON.stringify(MONTHS));
+      updatePeriodHeader();
+      renderAll();
+      if (document.getElementById('modalMonths') && !document.getElementById('modalMonths').classList.contains('hidden')) {
+        renderMonthsModalList();
+      }
+    }
+
+    function removeLastMonth() {
+      if (MONTHS.length <= 1) {
+        alert('Debe haber al menos un mes en el calendario.');
+        return;
+      }
+      MONTHS.pop();
+      localStorage.setItem('vac_custom_months', JSON.stringify(MONTHS));
+      updatePeriodHeader();
+      renderAll();
+      if (document.getElementById('modalMonths') && !document.getElementById('modalMonths').classList.contains('hidden')) {
+        renderMonthsModalList();
+      }
+    }
+
+    function resetDefaultMonths() {
+      if (!confirm('¿Deseas restablecer el calendario al período original (Septiembre 2026 a Abril 2027)?')) return;
+      MONTHS = [...DEFAULT_MONTHS];
+      localStorage.setItem('vac_custom_months', JSON.stringify(MONTHS));
+      updatePeriodHeader();
+      renderAll();
+      if (document.getElementById('modalMonths') && !document.getElementById('modalMonths').classList.contains('hidden')) {
+        renderMonthsModalList();
+      }
+      alert('🔄 Período restablecido correctamente a Septiembre 2026 — Abril 2027.');
+    }
+
+    function updatePeriodHeader() {
+      if (!MONTHS.length) return;
+      const first = MONTHS[0];
+      const last = MONTHS[MONTHS.length - 1];
+      const pEl = document.getElementById('periodText');
+      if (pEl) pEl.innerHTML = `Período: <strong>${first.name} — ${last.name}</strong> (${MONTHS.length} meses)`;
+
+      const maxDay = String(last.days).padStart(2, '0');
+      const maxMonth = String(last.month + 1).padStart(2, '0');
+      const maxDateStr = `${last.year}-${maxMonth}-${maxDay}`;
+
+      const minDay = '01';
+      const minMonth = String(first.month + 1).padStart(2, '0');
+      const minDateStr = `${first.year}-${minMonth}-${minDay}`;
+
+      const vStart = document.getElementById('vacationStart');
+      const vEnd = document.getElementById('vacationEnd');
+      if (vStart && vEnd) {
+        vStart.min = minDateStr;
+        vStart.max = maxDateStr;
+        vEnd.min = minDateStr;
+        vEnd.max = maxDateStr;
+      }
+    }
+
+    function saveState(pushToCloud = true) {
+      localStorage.setItem('vac_members_final', JSON.stringify(teamMembers));
+      localStorage.setItem('vac_list_final', JSON.stringify(vacations));
+      localStorage.setItem('vac_custom_months', JSON.stringify(MONTHS));
+
+      if (pushToCloud && isFirebaseConnected && firebaseDbRef) {
+        updateSyncBadge('syncing');
+        firebaseDbRef.set({
+          teamMembers: teamMembers,
+          vacations: vacations,
+          months: MONTHS,
+          lastUpdated: Date.now(),
+          lastRole: isAdmin ? 'Líder' : 'Colaborador'
+        }).then(() => {
+          updateSyncBadge('online');
+        }).catch(err => {
+          console.error('Error guardando en Firebase:', err);
+          updateSyncBadge('error', err.message);
+        });
+      }
+    }
+
+    // SINCRONIZACIÓN Y GESTIÓN DE FIREBASE
+    function initFirebase() {
+      let config = PRESET_FIREBASE_CONFIG;
+      const savedCfg = localStorage.getItem('vac_firebase_config');
+      if (savedCfg) {
+        try { config = JSON.parse(savedCfg); } catch(e){}
+      }
+
+      if (!config || !config.databaseURL) {
+        updateSyncBadge('offline');
+        return;
+      }
+
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(config);
+        }
+        const db = firebase.database();
+        firebaseDbRef = db.ref('vacaciones_equipo');
+
+        updateSyncBadge('connecting');
+
+        firebaseDbRef.on('value', snapshot => {
+          const data = snapshot.val();
+          if (data) {
+            let changed = false;
+            if (data.vacations) {
+              vacations = data.vacations;
+              changed = true;
+            }
+            if (data.teamMembers) {
+              teamMembers = data.teamMembers;
+              changed = true;
+            }
+            if (data.months && data.months.length) {
+              MONTHS = data.months;
+              changed = true;
+            }
+            if (changed) {
+              saveState(false);
+              updatePeriodHeader();
+              renderAll();
+            }
+          } else {
+            // Si la base en la nube está vacía, subir el estado inicial actual
+            saveState(true);
+          }
+          isFirebaseConnected = true;
+          updateSyncBadge('online');
+        }, error => {
+          console.error('Error leyendo Firebase:', error);
+          updateSyncBadge('error', error.message);
+        });
+
+      } catch (err) {
+        console.error('Error iniciando Firebase:', err);
+        updateSyncBadge('error', err.message);
+      }
+    }
+
+    function updateSyncBadge(status, msg = '') {
+      const badge = document.getElementById('syncStatusBadge');
+      const dot = document.getElementById('syncDot');
+      const text = document.getElementById('syncStatusText');
+      if (!badge || !dot || !text) return;
+
+      if (status === 'online') {
+        badge.className = 'px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-emerald-300 bg-emerald-50 text-emerald-800 shadow-xs';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+        text.textContent = '🟢 En Línea (Sincronizado)';
+        badge.title = 'Conectado a Firebase en tiempo real. Clic para ver detalles.';
+      } else if (status === 'syncing') {
+        badge.className = 'px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-sky-300 bg-sky-50 text-sky-800 shadow-xs';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse';
+        text.textContent = '🔄 Sincronizando...';
+      } else if (status === 'connecting') {
+        badge.className = 'px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-amber-300 bg-amber-50 text-amber-800 shadow-xs';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse';
+        text.textContent = '🟡 Conectando Nube...';
+      } else if (status === 'error') {
+        badge.className = 'px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-rose-300 bg-rose-50 text-rose-800 shadow-xs';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
+        text.textContent = '⚠️ Error Nube';
+        badge.title = 'Error: ' + (msg || 'No se pudo conectar a Firebase') + '. Clic para revisar configuración.';
+      } else {
+        badge.className = 'px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-xs';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+        text.textContent = '☁️ Conectar Nube';
+        badge.title = 'Haz clic aquí para conectar tu base de datos de Firebase y compartir en línea.';
+      }
+    }
+
+    function openFirebaseConfigModal() {
+      const savedCfg = localStorage.getItem('vac_firebase_config');
+      if (savedCfg) {
+        document.getElementById('firebaseConfigInput').value = savedCfg;
+      } else if (PRESET_FIREBASE_CONFIG) {
+        document.getElementById('firebaseConfigInput').value = JSON.stringify(PRESET_FIREBASE_CONFIG, null, 2);
+      }
+      updateModalFirebaseStatus();
+      document.getElementById('modalFirebaseConfig').classList.remove('hidden');
+    }
+
+    function closeFirebaseConfigModal() {
+      document.getElementById('modalFirebaseConfig').classList.add('hidden');
+    }
+
+    function updateModalFirebaseStatus() {
+      const dot = document.getElementById('modalSyncDot');
+      const title = document.getElementById('modalSyncTitle');
+      const sub = document.getElementById('modalSyncSubtitle');
+      const btnDisc = document.getElementById('btnDisconnectFirebase');
+
+      if (isFirebaseConnected) {
+        dot.className = 'w-3 h-3 rounded-full bg-emerald-500';
+        title.textContent = '🟢 Conectado y Sincronizado en Vivo';
+        title.className = 'font-bold text-emerald-800 block';
+        sub.textContent = 'Cualquier solicitud, aprobación o cambio se actualiza inmediatamente para todo el equipo.';
+        btnDisc.classList.remove('hidden');
+      } else {
+        dot.className = 'w-3 h-3 rounded-full bg-slate-400';
+        title.textContent = 'Modo Local (Sin sincronización en la nube)';
+        title.className = 'font-bold text-slate-800 block';
+        sub.textContent = 'Los datos solo se guardan en este navegador hasta que conectes tu base de datos de Firebase.';
+        btnDisc.classList.add('hidden');
+      }
+    }
+
+    function parseFirebaseConfig(rawText) {
+      if (!rawText) return null;
+      let text = rawText.trim();
+
+      if (text.includes('=')) {
+        text = text.substring(text.indexOf('=') + 1).trim();
+      }
+      if (text.endsWith(';')) {
+        text = text.slice(0, -1).trim();
+      }
+
+      try {
+        return JSON.parse(text);
+      } catch (e) {}
+
+      const config = {};
+      const fields = ['apiKey', 'authDomain', 'databaseURL', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+      fields.forEach(f => {
+        const regex = new RegExp(`['"]?${f}['"]?\\s*:\\s*['"\`]([^'"\`]+)['"\`]`);
+        const match = rawText.match(regex);
+        if (match) config[f] = match[1];
+      });
+
+      if (config.apiKey && config.projectId) {
+        if (!config.databaseURL) {
+          config.databaseURL = `https://${config.projectId}-default-rtdb.firebaseio.com`;
+        }
+        return config;
+      }
+      return null;
+    }
+
+    function saveFirebaseConfigAndConnect() {
+      const raw = document.getElementById('firebaseConfigInput').value;
+      const config = parseFirebaseConfig(raw);
+
+      if (!config || !config.apiKey || !config.databaseURL) {
+        alert('⚠️ No se reconoció una configuración válida de Firebase.\n\nAsegúrate de copiar el bloque que contiene "apiKey" y "databaseURL" (recuerda crear la Realtime Database en la consola de Firebase).');
+        return;
+      }
+
+      localStorage.setItem('vac_firebase_config', JSON.stringify(config, null, 2));
+      alert('Configuración guardada. Conectando con Firebase Realtime Database...');
+      initFirebase();
+      updateModalFirebaseStatus();
+      closeFirebaseConfigModal();
+    }
+
+    function disconnectFirebase() {
+      if (!confirm('¿Deseas desconectar Firebase y volver al modo exclusivamente local en este equipo?')) return;
+      localStorage.removeItem('vac_firebase_config');
+      isFirebaseConnected = false;
+      firebaseDbRef = null;
+      updateSyncBadge('offline');
+      updateModalFirebaseStatus();
+      alert('Nube desconectada. Ahora estás en modo local.');
+    }
+
+    function exportReadyToShareHTML() {
+      const cfg = PRESET_FIREBASE_CONFIG || (localStorage.getItem('vac_firebase_config') ? JSON.parse(localStorage.getItem('vac_firebase_config')) : null);
+      if (!cfg) {
+        alert('Primero debes guardar y conectar tu configuración de Firebase para poder generar el archivo pre-configurado para tu equipo.');
+        return;
+      }
+
+      let html = document.documentElement.outerHTML;
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'vacaciones_equipo_online.html';
+      a.click();
+      alert('✅ Archivo "vacaciones_equipo_online.html" descargado con éxito.\n\nEste archivo ya tiene la base de datos de Firebase incrustada. Ahora solo tienes que arrastrarlo a app.netlify.com/drop o tiiny.host para obtener el enlace público y pasárselo a tu equipo.');
+    }
+
+    function calculateBizDays(sStr, eStr) {
+      if (!sStr || !eStr) return { bizDays: 0, calDays: 0, weekends: 0, holidays: 0, holidayNames: [] };
+      const s = new Date(sStr + 'T00:00:00');
+      const e = new Date(eStr + 'T00:00:00');
+      if (s > e) return { bizDays: 0, calDays: 0, weekends: 0, holidays: 0, holidayNames: [] };
+
+      let bizDays = 0, weekends = 0, holidays = 0, calDays = 0;
+      let holidayNames = [];
+      let cur = new Date(s);
+      while (cur <= e) {
+        calDays++;
+        const dWeek = cur.getDay();
+        const dStr = cur.toISOString().split('T')[0];
+        if (dWeek === 0 || dWeek === 6) {
+          weekends++;
+        } else if (ARG_HOLIDAYS[dStr]) {
+          holidays++;
+          holidayNames.push(`${dStr}: ${ARG_HOLIDAYS[dStr]}`);
+        } else {
+          bizDays++;
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+      return { bizDays, calDays, weekends, holidays, holidayNames };
+    }
+
+    function renderAll() {
+      renderStats();
+      renderBalances();
+      renderChart();
+      renderFilterSelect();
+      renderHolidaysList();
+
+      if (currentView === 'calendar') renderCalendar();
+      else if (currentView === 'gantt') renderGantt();
+      else renderTable();
+    }
+
+    function renderStats() {
+      const approvedVacations = vacations.filter(v => v.status === 'APROBADA');
+      const pendingVacations = vacations.filter(v => v.status === 'PENDIENTE');
+
+      const approvedDays = approvedVacations.reduce((sum, v) => sum + (v.bizDays || 0), 0);
+      const pendingDays = pendingVacations.reduce((sum, v) => sum + (v.bizDays || 0), 0);
+
+      document.getElementById('statTotalDays').innerHTML = `
+        <span>${approvedDays} d</span>
+        ${pendingDays > 0 ? `<span class="text-xs font-semibold text-amber-600 block">(+${pendingDays}d pendientes)</span>` : ''}
+      `;
+      document.getElementById('statTotalMembers').textContent = teamMembers.length;
+
+      // Actualizar contador del buzón en el header
+      const pBadge = document.getElementById('pendingBadgeCount');
+      if (pendingVacations.length > 0) {
+        pBadge.classList.remove('hidden');
+        pBadge.textContent = pendingVacations.length;
+      } else {
+        pBadge.classList.add('hidden');
+      }
+
+      // Solapamientos entre vacaciones activas
+      const usage = {};
+      vacations.filter(v => v.status !== 'RECHAZADA').forEach(v => {
+        const m = teamMembers.find(x => x.id === v.memberId);
+        if (!m) return;
+        let cur = new Date(v.start + 'T00:00:00');
+        const end = new Date(v.end + 'T00:00:00');
+        while (cur <= end) {
+          const dStr = cur.toISOString().split('T')[0];
+          const dw = cur.getDay();
+          if (dw !== 0 && dw !== 6 && !ARG_HOLIDAYS[dStr]) {
+            if (!usage[dStr]) usage[dStr] = [];
+            const tag = v.status === 'PENDIENTE' ? `${m.name} (⏳)` : m.name;
+            if (!usage[dStr].includes(tag)) usage[dStr].push(tag);
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+      });
+
+      const overlapDates = Object.keys(usage).filter(d => usage[d].length > 1);
+      document.getElementById('statTotalOverlaps').textContent = overlapDates.length + ' días';
+
+      const alertBox = document.getElementById('overlapAlertBox');
+      const alertList = document.getElementById('overlapList');
+      if (overlapDates.length > 0) {
+        alertBox.classList.remove('hidden');
+        alertList.innerHTML = overlapDates.slice(0, 4).map(d => `• <strong>${d}</strong>: ${usage[d].join(' y ')} coinciden de vacaciones.`).join('<br>');
+      } else {
+        alertBox.classList.add('hidden');
+      }
+
+      // Mes Pico
+      const mCounts = {};
+      MONTHS.forEach(m => mCounts[m.name] = 0);
+      vacations.filter(v => v.status === 'APROBADA').forEach(v => {
+        let cur = new Date(v.start + 'T00:00:00');
+        const end = new Date(v.end + 'T00:00:00');
+        while (cur <= end) {
+          const dStr = cur.toISOString().split('T')[0];
+          const dw = cur.getDay();
+          if (dw !== 0 && dw !== 6 && !ARG_HOLIDAYS[dStr]) {
+            const mMatch = MONTHS.find(x => x.year === cur.getFullYear() && x.month === cur.getMonth());
+            if (mMatch) mCounts[mMatch.name]++;
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+      });
+
+      let peakM = '-', peakMax = 0;
+      Object.entries(mCounts).forEach(([name, c]) => {
+        if (c > peakMax) { peakMax = c; peakM = name; }
+      });
+      document.getElementById('statPeakMonth').textContent = peakMax > 0 ? peakM : '-';
+      document.getElementById('statPeakDetail').textContent = peakMax > 0 ? `${peakMax} días aprobados` : 'Sin datos';
+    }
+
+    function renderBalances() {
+      const c = document.getElementById('memberBalancesContainer');
+      c.innerHTML = teamMembers.map(m => {
+        const mApproved = vacations.filter(v => v.memberId === m.id && v.status === 'APROBADA').reduce((sum, v) => sum + (v.bizDays || 0), 0);
+        const mPending = vacations.filter(v => v.memberId === m.id && v.status === 'PENDIENTE').reduce((sum, v) => sum + (v.bizDays || 0), 0);
+        const remaining = m.quota - mApproved;
+        const pct = Math.min(100, Math.round((mApproved / m.quota) * 100)) || 0;
+        const colorClass = remaining > 0 ? 'bg-emerald-500' : (remaining === 0 ? 'bg-amber-500' : 'bg-rose-500');
+        return `
+          <div class="p-2 rounded-lg bg-slate-50 border border-slate-200/80 text-xs">
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-1.5 font-bold text-slate-800">
+                <span class="w-2.5 h-2.5 rounded-full" style="background-color: ${m.color}"></span>
+                ${m.name}
+              </div>
+              <span class="font-extrabold ${remaining >= 0 ? 'text-emerald-700' : 'text-rose-700'}">
+                ${remaining} disp.
+              </span>
+            </div>
+            <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+              <div class="${colorClass} h-full" style="width: ${pct}%"></div>
+            </div>
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+              <span>${mApproved} tomados ${mPending > 0 ? `<strong class="text-amber-600">(+${mPending} pend.)</strong>` : ''}</span>
+              <span>${m.quota} asignados</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderChart() {
+      const c = document.getElementById('chartContainer');
+      c.innerHTML = '';
+      const counts = MONTHS.map(m => {
+        let count = 0;
+        vacations.filter(v => v.status === 'APROBADA').forEach(v => {
+          let cur = new Date(v.start + 'T00:00:00');
+          const end = new Date(v.end + 'T00:00:00');
+          while (cur <= end) {
+            const dStr = cur.toISOString().split('T')[0];
+            const dw = cur.getDay();
+            if (dw !== 0 && dw !== 6 && !ARG_HOLIDAYS[dStr]) {
+              if (cur.getFullYear() === m.year && cur.getMonth() === m.month) count++;
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+        });
+        return count;
+      });
+
+      const maxVal = Math.max(1, ...counts);
+      MONTHS.forEach((m, idx) => {
+        const val = counts[idx];
+        const heightPct = Math.round((val / maxVal) * 80);
+        const col = document.createElement('div');
+        col.className = 'flex-1 flex flex-col items-center justify-end h-full group';
+        col.innerHTML = `
+          <span class="text-[10px] font-bold text-indigo-600 mb-1 ${val > 0 ? '' : 'opacity-0'}">${val}d</span>
+          <div class="w-full bg-indigo-500 rounded-t-lg transition-all duration-300 hover:bg-indigo-600" style="height: ${Math.max(4, heightPct)}%"></div>
+          <span class="text-[10px] font-bold text-slate-500 mt-2 truncate">${m.short}</span>
+        `;
+        c.appendChild(col);
+      });
+    }
+
+    function renderCalendar() {
+      const grid = document.getElementById('calendarGrid');
+      grid.innerHTML = '';
+
+      document.getElementById('legendMembers').innerHTML = teamMembers.map(m => `
+        <span class="inline-flex items-center gap-1 font-bold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+          <span class="w-2 h-2 rounded-full" style="background-color: ${m.color}"></span>
+          ${m.name}
+        </span>
+      `).join('');
+
+      let filteredVac = vacations.filter(v => v.status !== 'RECHAZADA');
+      if (filterMember !== 'ALL') {
+        filteredVac = filteredVac.filter(v => v.memberId === filterMember);
+      }
+      if (filterStatus !== 'ALL') {
+        filteredVac = filteredVac.filter(v => v.status === filterStatus);
+      }
+
+      MONTHS.forEach(m => {
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col';
+        card.innerHTML = `
+          <div class="bg-slate-100 px-3 py-1.5 border-b font-extrabold text-xs text-slate-800 uppercase flex justify-between items-center">
+            <span>${m.name}</span>
+            <div class="flex items-center gap-1.5">
+              <span class="text-[10px] text-slate-400 font-normal">${m.days} días</span>
+              <button onclick="confirmRemoveMonth(${m.year}, ${m.month})" class="text-slate-400 hover:text-rose-600 hover:bg-rose-100 rounded px-1.5 py-0.5 transition cursor-pointer text-xs font-bold" title="Quitar ${m.name} del calendario">✕</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-7 text-center text-[10px] font-bold text-slate-400 py-1 bg-slate-50 border-b">
+            <span>Lu</span><span>Ma</span><span>Mi</span><span>Ju</span><span>Vi</span><span class="text-slate-300">Sá</span><span class="text-slate-300">Do</span>
+          </div>
+        `;
+
+        const dGrid = document.createElement('div');
+        dGrid.className = 'grid grid-cols-7 text-center text-xs p-1 gap-1 flex-1';
+
+        const fDate = new Date(m.year, m.month, 1);
+        let fIdx = fDate.getDay();
+        let blanks = (fIdx === 0) ? 6 : (fIdx - 1);
+        for (let i = 0; i < blanks; i++) dGrid.innerHTML += '<div class="h-10"></div>';
+
+        for (let day = 1; day <= m.days; day++) {
+          const dStr = `${m.year}-${String(m.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const dObj = new Date(m.year, m.month, day);
+          const dw = dObj.getDay();
+          const isWk = (dw === 0 || dw === 6);
+          const isHol = ARG_HOLIDAYS[dStr];
+
+          const onLeaveApproved = [];
+          const onLeavePending = [];
+
+          filteredVac.forEach(v => {
+            if (dStr >= v.start && dStr <= v.end) {
+              const mem = teamMembers.find(x => x.id === v.memberId);
+              if (mem) {
+                if (v.status === 'APROBADA' && !onLeaveApproved.some(x => x.mem.id === mem.id)) onLeaveApproved.push({ mem, vac: v });
+                else if (v.status === 'PENDIENTE' && !onLeavePending.some(x => x.mem.id === mem.id)) onLeavePending.push({ mem, vac: v });
+              }
+            }
+          });
+
+          const totalLeave = onLeaveApproved.length + onLeavePending.length;
+          const isOver = totalLeave > 1;
+          let bgClass = isWk ? 'bg-slate-100 text-slate-400' : 'bg-white text-slate-700 hover:border-indigo-400 cursor-pointer';
+          if (isHol) bgClass = 'bg-sky-50 text-sky-900 border-sky-300 font-bold';
+          if (isOver) bgClass += ' ring-2 ring-amber-400';
+
+          const cell = document.createElement('div');
+          cell.className = `h-10 rounded-lg p-0.5 flex flex-col justify-between border border-slate-100 relative ${bgClass}`;
+          
+          let tooltip = dStr;
+          if (isHol) tooltip += ` • 🇦🇷 ${isHol}`;
+          if (onLeaveApproved.length) tooltip += ` • Aprobadas: ${onLeaveApproved.map(x=>x.mem.name).join(', ')}`;
+          if (onLeavePending.length) tooltip += ` • ⏳ Pendientes: ${onLeavePending.map(x=>x.mem.name).join(', ')}`;
+          cell.title = tooltip;
+
+          let badges = '<div class="space-y-0.5 overflow-hidden">';
+          if (onLeaveApproved.length === 1 && onLeavePending.length === 0) {
+            badges += `<div class="text-[8px] font-bold text-white px-1 rounded truncate shadow-xs cursor-pointer hover:brightness-110" style="background-color: ${onLeaveApproved[0].mem.color}" onclick="event.stopPropagation(); openVacationModal('${onLeaveApproved[0].vac.id}')" title="Clic para ver, modificar o cancelar">${onLeaveApproved[0].mem.name}</div>`;
+          } else if (onLeaveApproved.length === 0 && onLeavePending.length === 1) {
+            badges += `<div class="text-[8px] font-extrabold px-1 rounded truncate border border-dashed border-amber-500 bg-amber-100 text-amber-900 cursor-pointer hover:bg-amber-200" onclick="event.stopPropagation(); openVacationModal('${onLeavePending[0].vac.id}')" title="Clic para ver, modificar o cancelar">⏳ ${onLeavePending[0].mem.name}</div>`;
+          } else if (totalLeave > 1) {
+            badges += `<div class="flex justify-center gap-0.5 items-center">
+              ${onLeaveApproved.slice(0, 2).map(x => `<span class="w-2.5 h-2.5 rounded-full border border-white cursor-pointer hover:scale-125 transition" style="background-color: ${x.mem.color}" onclick="event.stopPropagation(); openVacationModal('${x.vac.id}')" title="${x.mem.name}: clic para ver/cancelar"></span>`).join('')}
+              ${onLeavePending.slice(0, 2).map(x => `<span class="w-2.5 h-2.5 rounded-full border border-dashed border-amber-600 bg-amber-300 cursor-pointer hover:scale-125 transition" onclick="event.stopPropagation(); openVacationModal('${x.vac.id}')" title="${x.mem.name} (Pendiente): clic para ver/cancelar"></span>`).join('')}
+            </div>`;
+          }
+          badges += '</div>';
+
+          cell.innerHTML = `
+            <div class="flex justify-between items-center text-[9px] px-0.5">
+              <span>${day}</span>
+              ${isHol ? '<span>🇦🇷</span>' : ''}
+              ${isOver ? '<span>⚠️</span>' : ''}
+            </div>
+            ${badges}
+          `;
+
+          if (totalLeave === 1) {
+            const singleVac = onLeaveApproved.length ? onLeaveApproved[0].vac : onLeavePending[0].vac;
+            cell.onclick = () => openVacationModal(singleVac.id);
+          } else {
+            cell.onclick = () => openVacationModal(null, dStr);
+          }
+          dGrid.appendChild(cell);
+        }
+
+        card.appendChild(dGrid);
+        grid.appendChild(card);
+      });
+    }
+
+    function renderGantt() {
+      const wrap = document.getElementById('ganttWrapper');
+      wrap.innerHTML = '';
+      if (!MONTHS.length) {
+        wrap.innerHTML = '<div class="p-6 text-center text-slate-400 font-bold">No hay meses activos para mostrar en el cronograma.</div>';
+        return;
+      }
+
+      const allDays = [];
+      const dayIndexMap = {};
+      MONTHS.forEach(m => {
+        for (let day = 1; day <= m.days; day++) {
+          const dStr = `${m.year}-${String(m.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const dObj = new Date(m.year, m.month, day);
+          dayIndexMap[dStr] = allDays.length;
+          allDays.push({ dObj, dStr });
+        }
+      });
+
+      const gantt = document.createElement('div');
+      gantt.style.minWidth = `${allDays.length * 20 + 160}px`;
+
+      let mHeader = `<div class="flex bg-slate-100 border-b text-[11px] font-bold sticky top-0"><div class="w-40 p-2 border-r">Integrante</div>`;
+      MONTHS.forEach(m => {
+        mHeader += `<div class="p-2 border-r text-center uppercase" style="width: ${m.days * 20}px">${m.short}</div>`;
+      });
+      mHeader += '</div>';
+      gantt.innerHTML = mHeader;
+
+      const fMembers = filterMember === 'ALL' ? teamMembers : teamMembers.filter(m => m.id === filterMember);
+      fMembers.forEach(mem => {
+        const row = document.createElement('div');
+        row.className = 'flex border-b hover:bg-slate-50 relative h-10 items-center text-xs';
+        row.innerHTML = `
+          <div class="w-40 p-2 border-r flex items-center gap-1.5 font-bold text-slate-800 bg-white shrink-0">
+            <span class="w-2.5 h-2.5 rounded-full" style="background-color: ${mem.color}"></span>
+            ${mem.name}
+          </div>
+          <div class="flex flex-1 h-full relative">
+            ${allDays.map(({ dObj, dStr }) => {
+              const dw = dObj.getDay();
+              const isWk = (dw === 0 || dw === 6);
+              const isHol = !!ARG_HOLIDAYS[dStr];
+              return `<div class="w-5 h-full border-r border-slate-100 shrink-0 ${isHol ? 'bg-sky-50' : (isWk ? 'bg-slate-100/50' : '')}"></div>`;
+            }).join('')}
+          </div>
+        `;
+
+        let memVac = vacations.filter(v => v.memberId === mem.id && v.status !== 'RECHAZADA');
+        if (filterStatus !== 'ALL') {
+          memVac = memVac.filter(v => v.status === filterStatus);
+        }
+
+        const dayContainer = row.querySelector('.flex.flex-1');
+        memVac.forEach(vac => {
+          let startIdx = null;
+          let endIdx = null;
+          let cur = new Date(vac.start + 'T00:00:00');
+          const ve = new Date(vac.end + 'T00:00:00');
+          while (cur <= ve) {
+            const dStr = cur.toISOString().split('T')[0];
+            if (dayIndexMap[dStr] !== undefined) {
+              if (startIdx === null) startIdx = dayIndexMap[dStr];
+              endIdx = dayIndexMap[dStr];
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+
+          if (startIdx === null || endIdx === null) return;
+          const dur = (endIdx - startIdx) + 1;
+
+          const bar = document.createElement('div');
+          const isPend = vac.status === 'PENDIENTE';
+          bar.className = 'absolute top-1.5 h-7 rounded text-[10px] font-bold flex items-center px-1.5 cursor-pointer shadow-xs truncate transition hover:scale-102';
+          bar.style.left = `${startIdx * 20 + 2}px`;
+          bar.style.width = `${dur * 20 - 4}px`;
+
+          if (isPend) {
+            bar.style.border = `2px dashed ${mem.color}`;
+            bar.style.backgroundColor = `${mem.color}33`;
+            bar.style.color = '#78350f';
+            bar.innerHTML = `<span class="truncate">⏳ ${mem.name} (${vac.bizDays}d)</span>`;
+            bar.title = `${mem.name}: ${vac.start} al ${vac.end} (⏳ PENDIENTE - ${vac.bizDays}d hábiles)`;
+          } else {
+            bar.style.backgroundColor = mem.color;
+            bar.style.color = '#ffffff';
+            bar.innerHTML = `<span class="truncate">${mem.name} (${vac.bizDays}d)</span>`;
+            bar.title = `${mem.name}: ${vac.start} al ${vac.end} (✅ APROBADA - ${vac.bizDays}d hábiles)`;
+          }
+
+          bar.onclick = () => openVacationModal(vac.id);
+          dayContainer.appendChild(bar);
+        });
+
+        gantt.appendChild(row);
+      });
+      wrap.appendChild(gantt);
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('vacationTableBody');
+      let fVac = [...vacations];
+      if (filterMember !== 'ALL') fVac = fVac.filter(v => v.memberId === filterMember);
+      if (filterStatus !== 'ALL') fVac = fVac.filter(v => v.status === filterStatus);
+
+      if (!fVac.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center p-6 text-slate-400 font-semibold">No hay vacaciones que coincidan con los filtros.</td></tr>';
+        return;
+      }
+
+      // Ordenar: primero pendientes, luego por fecha
+      fVac.sort((a, b) => {
+        if (a.status === 'PENDIENTE' && b.status !== 'PENDIENTE') return -1;
+        if (a.status !== 'PENDIENTE' && b.status === 'PENDIENTE') return 1;
+        return a.start.localeCompare(b.start);
+      });
+
+      tbody.innerHTML = fVac.map(v => {
+        const mem = teamMembers.find(m => m.id === v.memberId) || { name: 'Desconocido', color: '#999' };
+        
+        let statusBadge = '';
+        if (v.status === 'APROBADA') {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold text-[10px]">✅ Aprobada</span>';
+        } else if (v.status === 'PENDIENTE') {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-extrabold text-[10px]">⏳ Pendiente</span>';
+        } else {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-extrabold text-[10px]">❌ Rechazada</span>';
+        }
+
+        return `
+          <tr class="hover:bg-slate-50 border-b">
+            <td class="p-3 font-bold flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${mem.color}"></span>
+              ${mem.name}
+            </td>
+            <td class="p-3 text-center">${statusBadge}</td>
+            <td class="p-3 text-slate-600 font-medium">${v.start} al ${v.end}</td>
+            <td class="p-3 text-center"><span class="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-extrabold">${v.bizDays} hábiles</span></td>
+            <td class="p-3 text-center text-sky-700 font-semibold">${v.holidays > 0 ? '🇦🇷 ' + v.holidays : '0'}</td>
+            <td class="p-3 text-center text-slate-400">${v.weekends}</td>
+            <td class="p-3 text-center text-slate-500">${v.calDays}</td>
+            <td class="p-3 text-slate-500 max-w-xs truncate">${v.notes || '-'}</td>
+            <td class="p-3 text-right space-x-1.5 whitespace-nowrap">
+              ${v.status === 'PENDIENTE' && isAdmin ? `
+                <button onclick="approveVacation('${v.id}')" class="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-lg font-bold cursor-pointer text-xs border border-emerald-200">Aprobar</button>
+                <button onclick="rejectVacation('${v.id}')" class="text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded-lg font-bold cursor-pointer text-xs border border-rose-200">Rechazar</button>
+              ` : ''}
+              <button onclick="openVacationModal('${v.id}')" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition cursor-pointer text-xs">✏️ Modificar</button>
+              <button onclick="cancelVacation('${v.id}')" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg border border-rose-200 transition cursor-pointer text-xs" title="Cancelar vacación y devolver días al saldo">🚫 Cancelar</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function changeView(v) {
+      currentView = v;
+      document.getElementById('viewCalendar').classList.toggle('hidden', v !== 'calendar');
+      document.getElementById('viewGantt').classList.toggle('hidden', v !== 'gantt');
+      document.getElementById('viewTable').classList.toggle('hidden', v !== 'table');
+
+      document.getElementById('tabCalendar').className = v === 'calendar' ? 'px-3 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800 cursor-pointer' : 'px-3 py-1.5 text-xs font-bold rounded-lg text-slate-600 cursor-pointer';
+      document.getElementById('tabGantt').className = v === 'gantt' ? 'px-3 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800 cursor-pointer' : 'px-3 py-1.5 text-xs font-bold rounded-lg text-slate-600 cursor-pointer';
+      document.getElementById('tabTable').className = v === 'table' ? 'px-3 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800 cursor-pointer' : 'px-3 py-1.5 text-xs font-bold rounded-lg text-slate-600 cursor-pointer';
+
+      if (v === 'calendar') renderCalendar();
+      if (v === 'gantt') renderGantt();
+      if (v === 'table') renderTable();
+    }
+
+    function applyMemberFilter() {
+      filterMember = document.getElementById('filterMember').value;
+      renderAll();
+    }
+
+    function applyStatusFilter() {
+      filterStatus = document.getElementById('filterStatus').value;
+      renderAll();
+    }
+
+    function renderFilterSelect() {
+      const sel = document.getElementById('filterMember');
+      sel.innerHTML = '<option value="ALL">Todos los integrantes</option>' + teamMembers.map(m => `<option value="${m.id}" ${filterMember === m.id ? 'selected' : ''}>${m.name}</option>`).join('');
+    }
+
+    // MODAL VACACIONES
+    function openVacationModal(id = null, prefillStart = null) {
+      const sel = document.getElementById('vacationMemberId');
+      sel.innerHTML = teamMembers.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+      document.getElementById('vacationEditId').value = id || '';
+
+      const statusSelect = document.getElementById('vacationStatusInput');
+      const roleBadge = document.getElementById('badgeRoleInModal');
+      const statusNotice = document.getElementById('vacationStatusNotice');
+
+      if (isAdmin) {
+        roleBadge.textContent = '👑 Modo Líder Activo';
+        roleBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-200 text-emerald-900';
+        statusSelect.disabled = false;
+        statusNotice.textContent = 'Como líder, puedes aprobar la vacación de inmediato o guardarla en estado pendiente.';
+      } else {
+        roleBadge.textContent = '👤 Modo Colaborador';
+        roleBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-900';
+        statusSelect.value = 'PENDIENTE';
+        statusSelect.disabled = true;
+        statusNotice.textContent = 'Tu pedido quedará registrado como Pendiente en el calendario para que el líder lo apruebe.';
+      }
+
+      if (id) {
+        const v = vacations.find(x => x.id === id);
+        if (v) {
+          sel.value = v.memberId;
+          document.getElementById('vacationStart').value = v.start;
+          document.getElementById('vacationEnd').value = v.end;
+          document.getElementById('vacationNotes').value = v.notes || '';
+          statusSelect.value = v.status || 'APROBADA';
+        }
+        document.getElementById('vacationModalTitle').textContent = '🏖️ Modificar / Cancelar Vacaciones';
+        document.getElementById('btnCancelVacationModal').classList.remove('hidden');
+        document.getElementById('btnSaveVacationModal').textContent = 'Guardar Cambios';
+      } else {
+        const defaultStart = prefillStart || `${MONTHS[0].year}-${String(MONTHS[0].month + 1).padStart(2, '0')}-01`;
+        document.getElementById('vacationStart').value = defaultStart;
+        document.getElementById('vacationEnd').value = defaultStart;
+        document.getElementById('vacationNotes').value = '';
+        if (isAdmin) statusSelect.value = 'APROBADA';
+        else statusSelect.value = 'PENDIENTE';
+        document.getElementById('vacationModalTitle').textContent = '🏖️ Cargar Nueva Vacación';
+        document.getElementById('btnCancelVacationModal').classList.add('hidden');
+        document.getElementById('btnSaveVacationModal').textContent = isAdmin ? 'Guardar Vacación' : 'Enviar Solicitud';
+      }
+      previewVacation();
+      document.getElementById('modalVacation').classList.remove('hidden');
+    }
+
+    function closeVacationModal() {
+      document.getElementById('modalVacation').classList.add('hidden');
+    }
+
+    function previewVacation() {
+      const s = document.getElementById('vacationStart').value;
+      const e = document.getElementById('vacationEnd').value;
+      const calc = calculateBizDays(s, e);
+      document.getElementById('prevBizDays').textContent = calc.bizDays + ' hábiles';
+      document.getElementById('prevCalDays').textContent = calc.calDays;
+      document.getElementById('prevWeekends').textContent = calc.weekends;
+      document.getElementById('prevHolidays').textContent = calc.holidays;
+      const hBox = document.getElementById('prevHolidayNames');
+      if (calc.holidayNames.length) {
+        hBox.classList.remove('hidden');
+        hBox.innerHTML = '<strong>Feriados incluidos:</strong><br>' + calc.holidayNames.join('<br>');
+      } else {
+        hBox.classList.add('hidden');
+      }
+    }
+
+    function saveVacation(e) {
+      e.preventDefault();
+      const id = document.getElementById('vacationEditId').value;
+      const memberId = document.getElementById('vacationMemberId').value;
+      const start = document.getElementById('vacationStart').value;
+      const end = document.getElementById('vacationEnd').value;
+      const notes = document.getElementById('vacationNotes').value.trim();
+      const status = document.getElementById('vacationStatusInput').value || (isAdmin ? 'APROBADA' : 'PENDIENTE');
+
+      if (start > end) { alert('La fecha desde no puede ser posterior a la fecha hasta'); return; }
+
+      const calc = calculateBizDays(start, end);
+      if (id) {
+        const idx = vacations.findIndex(x => x.id === id);
+        if (idx !== -1) vacations[idx] = { ...vacations[idx], memberId, start, end, notes, status, ...calc };
+      } else {
+        vacations.push({ id: 'v_' + Date.now(), memberId, start, end, notes, status, ...calc });
+      }
+      saveState();
+      closeVacationModal();
+      renderAll();
+
+      if (status === 'PENDIENTE') {
+        alert('⏳ Solicitud enviada correctamente. Quedó registrada como PENDIENTE para aprobación del líder.');
+      } else {
+        alert('✅ Vacaciones guardadas y aprobadas correctamente.');
+      }
+    }
+
+    function cancelVacationFromModal() {
+      const id = document.getElementById('vacationEditId').value;
+      if (!id) return;
+      cancelVacation(id);
+    }
+
+    function cancelVacation(id) {
+      const v = vacations.find(x => x.id === id);
+      if (!v) return;
+      const mem = teamMembers.find(m => m.id === v.memberId) || { name: 'el integrante' };
+
+      const performCancel = () => {
+        const isApproved = v.status === 'APROBADA';
+        const msg = `¿Deseas dar de baja y cancelar las vacaciones de ${mem.name}?\n\n` +
+          `📅 Fechas: del ${v.start} al ${v.end}\n` +
+          `🏖️ Días hábiles que descuenta: ${v.bizDays} días\n` +
+          `📌 Estado actual: ${v.status}\n\n` +
+          (isApproved
+            ? `✨ Se reintegrarán automáticamente los ${v.bizDays} días a su saldo disponible para que pueda elegir una nueva fecha.`
+            : `✨ La solicitud pendiente será eliminada.`);
+
+        if (confirm(msg)) {
+          vacations = vacations.filter(x => x.id !== id);
+          saveState();
+          closeVacationModal();
+          renderAll();
+          const modalApp = document.getElementById('modalApprovals');
+          if (modalApp && !modalApp.classList.contains('hidden')) {
+            renderApprovalsModal();
+          }
+          alert(`✅ Vacaciones de ${mem.name} canceladas con éxito.\nSe han liberado ${v.bizDays} días hábiles en su saldo.`);
+        }
+      };
+
+      if (!isAdmin) {
+        currentPendingAction = performCancel;
+        openPinModal();
+      } else {
+        performCancel();
+      }
+    }
+
+    function deleteVacation(id) {
+      cancelVacation(id);
+    }
+
+    // MODAL BUZÓN DE APROBACIONES
+    function openApprovalsModal() {
+      if (!isAdmin) {
+        currentPendingAction = () => openApprovalsModalDirect();
+        openPinModal();
+        return;
+      }
+      openApprovalsModalDirect();
+    }
+
+    function openApprovalsModalDirect() {
+      renderApprovalsModal();
+      document.getElementById('modalApprovals').classList.remove('hidden');
+    }
+
+    function closeApprovalsModal() {
+      document.getElementById('modalApprovals').classList.add('hidden');
+    }
+
+    function renderApprovalsModal() {
+      const c = document.getElementById('approvalsListContainer');
+      const pending = vacations.filter(v => v.status === 'PENDIENTE');
+      document.getElementById('currentPinDisplay').textContent = adminPIN;
+
+      if (!pending.length) {
+        c.innerHTML = `
+          <div class="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+            <span class="text-3xl block mb-2">🎉</span>
+            <p class="font-bold text-slate-800 text-sm">¡No hay solicitudes pendientes!</p>
+            <p class="text-xs text-slate-500 mt-1">Todos los pedidos del equipo han sido aprobados o procesados.</p>
+          </div>
+        `;
+        return;
+      }
+
+      c.innerHTML = pending.map(v => {
+        const mem = teamMembers.find(m => m.id === v.memberId) || { name: 'Desconocido', color: '#666', quota: 14 };
+        const mApproved = vacations.filter(x => x.memberId === mem.id && x.status === 'APROBADA').reduce((sum, x) => sum + (x.bizDays || 0), 0);
+        const remainingNow = mem.quota - mApproved;
+        const remainingAfter = remainingNow - v.bizDays;
+
+        // Comprobar solapamiento
+        const overlaps = [];
+        vacations.filter(x => x.id !== v.id && x.status !== 'RECHAZADA').forEach(x => {
+          if (x.start <= v.end && x.end >= v.start) {
+            const oMem = teamMembers.find(m => m.id === x.memberId);
+            if (oMem && !overlaps.includes(oMem.name)) overlaps.push(`${oMem.name} (${x.status === 'PENDIENTE' ? 'Pendiente' : 'Aprobada'})`);
+          }
+        });
+
+        return `
+          <div class="p-3.5 rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-50 transition shadow-xs text-xs space-y-2">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs" style="background-color: ${mem.color}"></span>
+                <div>
+                  <h4 class="font-extrabold text-slate-900 text-sm">${mem.name}</h4>
+                  <p class="text-[11px] text-slate-500">${v.start} al ${v.end} • <strong class="text-indigo-700">${v.bizDays} días hábiles</strong></p>
+                </div>
+              </div>
+              <span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-extrabold text-[10px]">
+                ⏳ Pendiente
+              </span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-white/80 p-2 rounded-lg border border-slate-100 text-[11px]">
+              <div>
+                <span class="text-slate-400 block">Días Corridos:</span>
+                <span class="font-bold text-slate-700">${v.calDays} (${v.weekends} fin sem, ${v.holidays} fer.)</span>
+              </div>
+              <div>
+                <span class="text-slate-400 block">Saldo actual:</span>
+                <span class="font-bold text-emerald-700">${remainingNow} de ${mem.quota} días</span>
+              </div>
+              <div>
+                <span class="text-slate-400 block">Saldo si se aprueba:</span>
+                <span class="font-extrabold ${remainingAfter >= 0 ? 'text-indigo-600' : 'text-rose-600'}">${remainingAfter} días</span>
+              </div>
+            </div>
+
+            ${overlaps.length > 0 ? `
+              <div class="p-2 bg-rose-50 border border-rose-200 rounded-lg text-[11px] text-rose-800 flex items-center gap-1.5">
+                <span>⚠️</span>
+                <span><strong>Solapamiento:</strong> coincide en fechas con ${overlaps.join(', ')}.</span>
+              </div>
+            ` : `
+              <div class="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                <span>✓</span> Sin conflictos de solapamiento con el equipo.
+              </div>
+            `}
+
+            ${v.notes ? `<div class="text-[11px] text-slate-600 italic">" ${v.notes} "</div>` : ''}
+
+            <div class="flex items-center justify-end gap-2 pt-1 border-t border-amber-100">
+              <button onclick="rejectVacation('${v.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg border border-rose-200 transition cursor-pointer text-xs flex items-center gap-1">
+                <span>❌ Rechazar</span>
+              </button>
+              <button onclick="approveVacation('${v.id}')" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs transition cursor-pointer text-xs flex items-center gap-1">
+                <span>✅ Aprobar Vacación</span>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function approveVacation(id) {
+      if (!isAdmin) {
+        currentPendingAction = () => executeApprove(id);
+        openPinModal();
+        return;
+      }
+      executeApprove(id);
+    }
+
+    function executeApprove(id) {
+      const idx = vacations.findIndex(x => x.id === id);
+      if (idx !== -1) {
+        vacations[idx].status = 'APROBADA';
+        saveState();
+        renderApprovalsModal();
+        renderAll();
+        alert(`✅ Solicitud aprobada con éxito. Ya quedó firme en el calendario.`);
+      }
+    }
+
+    function rejectVacation(id) {
+      if (!isAdmin) {
+        currentPendingAction = () => executeReject(id);
+        openPinModal();
+        return;
+      }
+      executeReject(id);
+    }
+
+    function executeReject(id) {
+      const reason = prompt('Indica el motivo del rechazo para que el colaborador esté al tanto (opcional):', 'Solapamiento de fechas con guardia del equipo');
+      if (reason === null) return;
+      const idx = vacations.findIndex(x => x.id === id);
+      if (idx !== -1) {
+        vacations[idx].status = 'RECHAZADA';
+        vacations[idx].notes = (vacations[idx].notes ? vacations[idx].notes + ' | ' : '') + `Rechazada: ${reason}`;
+        saveState();
+        renderApprovalsModal();
+        renderAll();
+        alert(`❌ Solicitud rechazada.`);
+      }
+    }
+
+    // GESTIÓN DE ROLES Y PIN
+    function toggleAdminMode() {
+      if (isAdmin) {
+        isAdmin = false;
+        updateAdminUI();
+        renderAll();
+        alert('🔒 Has salido del Modo Líder. Ahora estás en Modo Colaborador.');
+      } else {
+        openPinModal();
+      }
+    }
+
+    function openPinModal() {
+      document.getElementById('inputPinCode').value = '';
+      document.getElementById('modalPin').classList.remove('hidden');
+      setTimeout(() => document.getElementById('inputPinCode').focus(), 100);
+    }
+
+    function closePinModal() {
+      document.getElementById('modalPin').classList.add('hidden');
+      currentPendingAction = null;
+    }
+
+    function submitPinCode() {
+      const entered = document.getElementById('inputPinCode').value.trim();
+      if (entered === adminPIN) {
+        isAdmin = true;
+        closePinModal();
+        updateAdminUI();
+        renderAll();
+        alert('👑 ¡Acceso Líder Activado! Ahora puedes aprobar/rechazar solicitudes y gestionar el equipo.');
+        if (currentPendingAction) {
+          const action = currentPendingAction;
+          currentPendingAction = null;
+          action();
+        }
+      } else {
+        alert('PIN incorrecto. (PIN inicial por defecto: 1234)');
+        document.getElementById('inputPinCode').value = '';
+        document.getElementById('inputPinCode').focus();
+      }
+    }
+
+    function changeAdminPIN() {
+      const current = prompt('Ingresa tu PIN actual:');
+      if (current !== adminPIN) {
+        alert('PIN actual incorrecto.');
+        return;
+      }
+      const newPin = prompt('Ingresa tu nuevo PIN (de 4 a 8 caracteres):');
+      if (!newPin || newPin.trim().length < 4) {
+        alert('El PIN debe tener al menos 4 caracteres.');
+        return;
+      }
+      adminPIN = newPin.trim();
+      localStorage.setItem('vac_admin_pin', adminPIN);
+      document.getElementById('currentPinDisplay').textContent = adminPIN;
+      alert(`PIN de Líder actualizado correctamente a: ${adminPIN}`);
+    }
+
+    function updateAdminUI() {
+      const btn = document.getElementById('btnAdminToggle');
+      const icon = document.getElementById('adminToggleIcon');
+      const text = document.getElementById('adminToggleText');
+      if (isAdmin) {
+        btn.className = 'px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-emerald-300 bg-emerald-50 text-emerald-800 shadow-xs';
+        icon.textContent = '👑';
+        text.textContent = 'Modo Líder (Activo)';
+      } else {
+        btn.className = 'px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+        icon.textContent = '🔒';
+        text.textContent = 'Acceso Líder';
+      }
+    }
+
+    function handleMemberModalClick() {
+      if (!isAdmin) {
+        currentPendingAction = () => openMemberModal();
+        openPinModal();
+      } else {
+        openMemberModal();
+      }
+    }
+
+    // MODAL EQUIPO
+    function openMemberModal() {
+      renderMemberList();
+      resetMemberForm();
+      document.getElementById('modalMember').classList.remove('hidden');
+    }
+    function closeMemberModal() { document.getElementById('modalMember').classList.add('hidden'); }
+
+    function renderMemberList() {
+      const c = document.getElementById('memberListModal');
+      c.innerHTML = teamMembers.map(m => `
+        <div class="flex items-center justify-between p-2 rounded-lg bg-slate-50 border text-xs">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full" style="background-color: ${m.color}"></span>
+            <span class="font-bold">${m.name}</span>
+            <span class="text-slate-400">(${m.quota}d)</span>
+          </div>
+          <div class="flex gap-1">
+            <button onclick="editMember('${m.id}')" class="text-indigo-600 font-bold px-1.5 cursor-pointer">Editar</button>
+            <button onclick="deleteMember('${m.id}')" class="text-rose-600 font-bold px-1.5 cursor-pointer">Borrar</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function resetMemberForm() {
+      document.getElementById('memberEditId').value = '';
+      document.getElementById('memberName').value = '';
+      document.getElementById('memberQuota').value = 14;
+      document.getElementById('btnSaveMember').textContent = 'Agregar';
+      document.getElementById('btnCancelMemberEdit').classList.add('hidden');
+    }
+
+    function editMember(id) {
+      const m = teamMembers.find(x => x.id === id);
+      if (!m) return;
+      document.getElementById('memberEditId').value = m.id;
+      document.getElementById('memberName').value = m.name;
+      document.getElementById('memberQuota').value = m.quota;
+      document.getElementById('memberColor').value = m.color;
+      document.getElementById('btnSaveMember').textContent = 'Guardar';
+      document.getElementById('btnCancelMemberEdit').classList.remove('hidden');
+    }
+
+    function saveMember(e) {
+      e.preventDefault();
+      const id = document.getElementById('memberEditId').value;
+      const name = document.getElementById('memberName').value.trim().toUpperCase();
+      const quota = parseInt(document.getElementById('memberQuota').value, 10) || 14;
+      const color = document.getElementById('memberColor').value;
+      if (!name) return;
+
+      if (id) {
+        const idx = teamMembers.findIndex(x => x.id === id);
+        if (idx !== -1) teamMembers[idx] = { ...teamMembers[idx], name, quota, color };
+      } else {
+        teamMembers.push({ id: 'm_' + Date.now(), name, quota, color });
+      }
+      saveState();
+      renderMemberList();
+      resetMemberForm();
+      renderAll();
+    }
+
+    function deleteMember(id) {
+      if (teamMembers.length <= 1) { alert('Debe quedar al menos un integrante.'); return; }
+      if (confirm('¿Eliminar integrante? Se borrarán sus vacaciones.')) {
+        teamMembers = teamMembers.filter(x => x.id !== id);
+        vacations = vacations.filter(x => x.memberId !== id);
+        saveState();
+        renderMemberList();
+        renderAll();
+      }
+    }
+
+    // MODAL FERIADOS
+    function openHolidaysModal() { document.getElementById('modalHolidays').classList.remove('hidden'); }
+    function closeHolidaysModal() { document.getElementById('modalHolidays').classList.add('hidden'); }
+    function renderHolidaysList() {
+      const c = document.getElementById('holidaysList');
+      c.innerHTML = Object.entries(ARG_HOLIDAYS).map(([d, n]) => `
+        <div class="flex justify-between p-2 rounded bg-sky-50 border border-sky-100">
+          <span class="font-bold text-sky-900">${d}</span>
+          <span class="text-sky-800">${n}</span>
+        </div>
+      `).join('');
+    }
+
+    // EXPORTAR EXCEL / CSV
+    function exportCSV() {
+      let csv = 'Integrante,Estado,Desde,Hasta,Dias Habiles,Feriados,Fines de Semana,Dias Corridos,Notas\n';
+      vacations.forEach(v => {
+        const m = teamMembers.find(x => x.id === v.memberId) || { name: 'Desconocido' };
+        csv += `"${m.name}","${v.status || 'APROBADA'}","${v.start}","${v.end}",${v.bizDays},${v.holidays},${v.weekends},${v.calDays},"${v.notes || ''}"\n`;
+      });
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'Vacaciones_Equipo_Sep2026_Abr2027.csv';
+      a.click();
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
